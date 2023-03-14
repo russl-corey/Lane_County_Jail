@@ -1,6 +1,8 @@
 # Lane_County_Jail
 Analysis of Lane County Jail
 
+report at [https://russl-corey.github.io/Lane_County_Jail.html](https://russl-corey.github.io/Lane_County_Jail.html)
+
 # Scripts
 
 ## scrape_jail.py
