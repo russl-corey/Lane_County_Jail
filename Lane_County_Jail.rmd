@@ -84,11 +84,19 @@ Source at [https://github.com/russl-corey/Lane_County_Jail](https://github.com/r
 
 # Data
 
+### Lane County Jail 
 Inmate data was retrieved from the Lane County Jail's booking search web portal:
 
 [http://inmateinformation.lanecounty.org/Home/BookingSearchQuery](http://inmateinformation.lanecounty.org/Home/BookingSearchQuery)
 
 on March 9th, 2023.
+
+### Oregon 2020 Census
+
+The 2020 Oregon census data can be found at 
+
+<https://www.pdx.edu/population-research/census-data-oregon>
+
 
 \newpage 
 
@@ -126,6 +134,8 @@ legend("topright", c(paste0(names(inmate_gender), " (", round(100*inmate_gender/
 
 ## Age
 
+Age distribution of inmates. Note, there are no inmates younger than 18 years old in 
+the system since these records are just for the adult facility.
 
 ```{r inmate age, echo=FALSE}
 # Add a new column to indicate age group by decade
@@ -154,6 +164,10 @@ Breakdown of inmates by race. It is probably safe to assume that the 'W' categor
 is probably 'White', and similar, 'A' and 'B' likely could be for 'Asian' and 'Black' 
 respectively. The other are too obscure to guess at this point.
 
+Also note that as of the 2020 Census, the overall percentage of black people in 
+Lane County is 2.6% while the inmate population is 6.7%, which is a disparity of 
+258% relative to County's racial demographic.
+
 ```{r inmate race, echo=FALSE, warning=FALSE}
 # load necessary libraries
 library(ggplot2)
@@ -164,7 +178,7 @@ inmate_counts <- inmates %>%
   summarize(count = n())
 
 # Calc percentage
-inmate_counts$percentage <- paste0(round(inmate_counts$count / sum(inmate_counts$count) * 100, 0), '%')
+inmate_counts$percentage <- paste0(round(inmate_counts$count / sum(inmate_counts$count) * 100, 1), '%')
 
 # Show table 
 inmate_counts %>%
@@ -180,7 +194,7 @@ ggplot(inmate_counts, aes(x="", y=count, fill=`Race:`)) +
 
 ```
 
-\newpages
+\newpage
 
 ## Bail
 
@@ -260,6 +274,9 @@ inmates$measure11[inmates$`Booking Number:` %in% m11_booking$`Booking Number:`] 
 # Count the number of inmates labeled as measure 11 and not
 measure11_counts <- table(inmates$measure11)
 
+data.frame(measure11_counts) %>%
+  kable(caption="Inmates with Measure 11 Charges")
+
 # Create a pie chart with percentage labels
 pie(measure11_counts, 
     labels = paste0(names(measure11_counts), ": ", 
@@ -332,7 +349,7 @@ charge_counts <- merge(x=charge_counts, y=vcode_names,
 charge_counts %>%
   select(`Violation:`, count) %>%
   arrange(desc(`count`)) %>%
-  head(40) %>%
+  head(20) %>%
   kable()
 
 
@@ -359,7 +376,7 @@ non_m11_charges %>%
   ungroup() %>%
   select(`Violation:`, count) %>%
   arrange(desc(`count`)) %>%
-  head(40) %>%
+  head(20) %>%
   kable()
 
 
@@ -368,9 +385,6 @@ non_m11_charges %>%
 \newpage
 
 
-
-
-\newpage
 
 ## Non-Measure 11 and Bail
 
@@ -412,25 +426,13 @@ title(main = "Proportion of Non-Measure 11 Inmates by Bail Type")
 ```
 
 
-# Appendix A 
-
-
-```{r A1, echo=FALSE}
-
-```
-
-```{r A2, echo = FALSE}
-
-
-```
-
-
-
 \newpage
 
+# Conclusion
 
+The jail is mostly holding inmates that do not have Measure 11 charges. There are currently 43 inmates that have unmet cash bail requirements that are not being held for Measure 11 felonies. Further, 297 inmates do not have Measure 11 charges. 
 
-# Appendix Z
+# Appendix A
 
 source code available at <https://github.com/russl-corey/Lane_County_Jail>
 
