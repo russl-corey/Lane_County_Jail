@@ -45,18 +45,54 @@ library(readr)
 library(dplyr)
 library(ggplot2)
 library(lubridate)
+library(stringr)
 library(tufte)
 ```
+
+
 
 ```{r set working director and load data, echo=FALSE, message=FALSE, warning=FALSE}
 
 setwd('/home/russell/Dropbox/DataAnalysis/Lane_County_Jail')
 
 # Use the date that we downloaded booking data
-study_date <-  as.Date("2023-03-09")
+study_date <-  as.Date("2023-04-13")
 
+# define folder and file names based on study date
+csv_folder <- paste0("/home/russell/Documents/scrape_jail/",study_date, '/')
+charges_file <- paste0('data/charges_', study_date, '.csv')
+
+if (file.exists(charges_file)){
+  print(paste(charges_file, 'already exists.'))
+} else {
+  # Make a list of all the available csv files
+  files <- paste0(csv_folder, list.files(csv_folder, pattern='.csv$'))
+  
+  # init empty var for data
+  csv_data <- c()
+  
+  for(file in files){
+    # read csv file
+    data <- read_csv(file)
+    
+    # append loaded data to data frame
+    csv_data <- rbind(csv_data, data)
+    
+    # clean
+    rm(data)
+  }
+  
+  # save records
+  write_csv(csv_data, charges_file )
+  
+  rm(csv_folder, csv_data, file, files)
+}
+
+```
+
+```{r load charges from csv file, warning=FALSE, echo=FALSE}
 # Load charges from csv file
-charges <- read_csv('data/inmate_list.csv', show_col_types = FALSE)
+charges <- read_csv(charges_file, show_col_types = FALSE)
 
 # Parse the code from the description
 charges$v_code <- gsub("^(\\d+\\.?\\d*).*", "\\1", charges$`Violation:`)
@@ -71,12 +107,63 @@ inmates <- charges %>%
 inmates$`Sched. Release:` <- as.Date(inmates$`Sched. Release:`, format = "%m/%d/%Y")
 inmates$`Released:` <- as.Date(inmates$`Released:`, format = "%m/%d/%Y")
 
+# drop no name charges
 charges <- charges[!is.na(charges$`full name`),]
+
+# drop cleared charges
+charges <- charges[is.na(charges$`Clearance:`),]
 ```
+
+```{r label charges based on ORS codes, echo=FALSE, warning=FALSE}
+# Load the relevant ORS codes
+file <- readLines("/home/russell/Dropbox/DataAnalysis/Lane_County_Jail/data/felonies_and_violent_offenses.txt")
+measure_11 <- read.csv("/home/russell/Dropbox/DataAnalysis/Lane_County_Jail/data/codes_measure_11.csv", sep=',')
+violent_felonies <- read.csv("/home/russell/Dropbox/DataAnalysis/Lane_County_Jail/data/codes_violent_felonies.csv", sep=':')
+
+# Label the charges 
+charges$measure_11 <- ifelse(charges$v_code %in% measure_11$code, TRUE, FALSE)
+charges$violent_felonies <- ifelse(charges$v_code %in% violent_felonies$code, TRUE, FALSE)
+charges$felony <- ifelse(charges$v_code %in% file, TRUE, FALSE)
+
+# cleanup
+rm(measure_11, class_a_felonies, violent_felonies, file)
+```
+
+```{r label inmates, warning=FALSE, echo=FALSE}
+
+# filter for measure 11 charges
+charges_m11 <- charges[charges$measure_11 == TRUE,]
+
+# filter for violent felonies
+charges_vo <- charges[charges$violent_felonies == TRUE,]
+
+# filter for any felony
+charges_felony <- charges[charges$felony == TRUE,]
+
+
+# Filter for only m11 charges then get distinct booking info
+m11_booking <- charges_m11 %>%
+  select(`Booking Number:`, `full name`, `Booking Date:`, `Sched. Release:`, 
+         `Released:`, `Sex:`, `Age:`, `Race:`) %>%
+  distinct()
+
+# Filter for only violent felony charges then get distinct booking info
+violent_felony_booking <- charges_vo %>%
+  select(`Booking Number:`, `full name`, `Booking Date:`, `Sched. Release:`, 
+         `Released:`, `Sex:`, `Age:`, `Race:`) %>%
+  distinct()
+
+# Filter for only felony charges then get distinct booking info
+felony_booking <- charges_felony %>%
+  select(`Booking Number:`, `full name`, `Booking Date:`, `Sched. Release:`, 
+         `Released:`, `Sex:`, `Age:`, `Race:`) %>%
+  distinct()
+```
+
 
 # Intro
 This report aims to provide insight into the current detained population in the 
-Lane County Jail on 2023-03-09. We will use a Python web scrapper to download the data from the 
+Lane County Jail on `r format(study_date, '%B %d, %Y')`. We will use a Python web scrapper to download the data from the 
 jail's online inmate search, then format that data into a single table that we 
 will then inspect and generate statistics about the population therein.
 
@@ -89,7 +176,7 @@ Inmate data was retrieved from the Lane County Jail's booking search web portal:
 
 [http://inmateinformation.lanecounty.org/Home/BookingSearchQuery](http://inmateinformation.lanecounty.org/Home/BookingSearchQuery)
 
-on March 9th, 2023.
+on `r format(study_date, '%B %d, %Y')`.
 
 ### Oregon 2020 Census
 
@@ -102,75 +189,19 @@ The 2020 Oregon census data can be found at
 
 # Inmates
 
-## Sex
-```{r current inmates, echo=FALSE, warning=FALSE}
-
-
-# filter out inmates without release dates
-inmates <- inmates[is.na(inmates$`Released:`), ]
-
-# Display total number of inmates in system
-print(paste('Total bookings found:', length(unique(inmates$`full name`))))
-
-# Create table with gender info
-inmate_gender <- table(inmates$`Sex:`)
-names(inmate_gender) = c('Female', 'Male')
-
-# Display table 
-inmate_gender %>%
-  kable(caption='Sex Counts')
-
-# Create a pie chart with labels and colors, and show percentages and counts
-pie(inmate_gender, labels = paste0(names(inmate_gender), " (", inmate_gender, ")"), 
-    col = c("#FF7F50", "#6495ED"), main = "Gender Distribution of Inmates", 
-    cex = 0.8, clockwise = TRUE, density = 10)
-
-# Add a legend with percentages and counts
-legend("topright", c(paste0(names(inmate_gender), " (", round(100*inmate_gender/sum(inmate_gender), 1), "%, ", inmate_gender, ")")), cex = 0.8, bty = "n")
-
-
-```
-\newpage
-
-## Age
-
-Age distribution of inmates. Note, there are no inmates younger than 18 years old in 
-the system since these records are just for the adult facility.
-
-```{r inmate age, echo=FALSE}
-# Add a new column to indicate age group by decade
-inmates$age_group <- cut(inmates$`Age:`, breaks = seq(0, 100, by = 10), include.lowest = TRUE)
-
-# Count the number of inmates in each age group
-counts <- table(inmates$age_group)
-
-# Display table of counts
-counts %>%
-  kable(caption='Age Range Groupings')
-
-# Create a bar chart with age group distribution
-plot <- barplot(counts, main = "Age Group Distribution", xlab = "Age Group", ylab = "Count", col = rainbow(length(counts)))
-
-# Add a labeled line at age 18
-#abline(v = 18, col = "red")
-#text(x = 18, y = max(counts), label = "18 years old", pos = 1)
-
-```
-\newpage
 
 ## Race
 
-Breakdown of inmates by race. It is probably safe to assume that the 'W' category label
-is probably 'White', and similar, 'A' and 'B' likely could be for 'Asian' and 'Black' 
-respectively. The other are too obscure to guess at this point.
-
-Also note that as of the 2020 Census, the overall percentage of black people in 
-Lane County is 2.6% while the inmate population is 6.7%, which is a disparity of 
-258% relative to County's racial demographic.
 
 ```{r inmate race, echo=FALSE, warning=FALSE}
 # load necessary libraries
 library(ggplot2)
+
+
+#  white percentage
+white_per <- 88.8
+black_per <- 1.3
+
 
 # Count inmate race
 inmate_counts <- inmates %>% 
@@ -178,12 +209,32 @@ inmate_counts <- inmates %>%
   summarize(count = n())
 
 # Calc percentage
-inmate_counts$percentage <- paste0(round(inmate_counts$count / sum(inmate_counts$count) * 100, 1), '%')
+inmate_counts$percentage <- round(inmate_counts$count / sum(inmate_counts$count) * 100, 1)
 
 # Show table 
 inmate_counts %>%
   kable(caption='Inmate Races')
 
+# save white and black inmate percentages as vars
+black_inmate_percentage <- inmate_counts$percentage[inmate_counts$`Race:` == 'B'] 
+white_inmate_percentage <- inmate_counts$percentage[inmate_counts$`Race:` == 'W'] 
+
+# calculate likelyhood ratios
+black_odds <- black_inmate_percentage / black_per
+white_odds <- white_inmate_percentage / white_per
+
+black_inmate_odds <- round(black_odds / white_odds, 1)
+```
+
+Breakdown of inmates by race. It is probably safe to assume that the 'W' category label
+is probably 'White', and similar, 'A' and 'B' likely could be for 'Asian' and 'Black' 
+respectively. The other are too obscure to guess at this point.
+
+Also note that as of the 2020 Census, the overall percentage of black people in 
+Lane County is 1.3% and 88.8% for white people. While the inmate population is `r black_inmate_percentage`% for black inmates and `r white_inmate_percentage`% for white inmates. Given this disparity, the odds of a black person in Lane County being an inmate of the jail is `r black_inmate_odds` times more likely than a white community member as of `r format(study_date, '%B %d, %Y')`.
+
+
+```{r inmate race plot, warning=FALSE, echo=FALSE}
 # create the pie chart
 ggplot(inmate_counts, aes(x="", y=count, fill=`Race:`)) +
   geom_bar(stat="identity", width=1) +
@@ -249,7 +300,7 @@ Measure 11 defines minimum mandatory sentences for listed felonies.
 > released due to capacity in nearly 10 years (since July 1, 2013)."
 > `r tufte::quote_footer('--- Sheriff Cliff Harrold to Board of County Commissioners, on Jan 25, 2023')`
 
-So let us inspect the porportion of inmates that are currently booked on Measure 11 charges.
+So let us inspect the proportion of inmates that are currently booked on Measure 11 charges.
 
 ```{r measure11 stats, echo=FALSE, warning=FALSE}
 
@@ -291,33 +342,45 @@ legend("topright", legend = names(measure11_counts),
 
 ```
 
+\newpage
+
+## Violent Felonies
+
+The main concern stated by the Sheriff in regards to the continuation of the jail levy 
+is the release of violent offenders into the community due to capacity releases. So let's 
+inspect the current inmates booked with at least one violent felony offense. These 
+offenses include all of the Measure 11 violations because all of the Measure 11 charges are 
+violent felonies. Note, the majority of these inmates are also being held pre-trial, 
+and thus presumed innocent.
 
 
+```{r felony stats, echo=FALSE, warning=FALSE}
 
-```{r measure11 inmates, echo=FALSE, warning=FALSE}
+# add felony column to inmate data frame
+inmates$violent_felony <- FALSE 
+inmates$violent_felony[inmates$`Booking Number:` %in% violent_felony_booking$`Booking Number:`] <- TRUE
 
-# Filter for only m11 charges then get distinct booking info
-m11_booking <- charges %>%
-  filter(m11 == TRUE) %>%
-  select(`Booking Number:`, `full name`, `Booking Date:`, `Sched. Release:`, 
-         `Released:`, `Sex:`, `Age:`, `Race:`) %>%
-  distinct()
+# Count the number of inmates labeled as felon and not
+felony_counts <- table(inmates$violent_felony)
 
-# Order and display inmates
-m11_booking %>%
-  arrange(`full name`) %>%
-  kable(caption='Inmates with Measure 11 Charges')
+data.frame(felony_counts) %>%
+  kable(caption="Inmates with Violent Felony Charges")
 
+# Create a pie chart with percentage labels
+pie(felony_counts, 
+    labels = paste0(names(felony_counts), ": ", 
+                    round(100*felony_counts/sum(felony_counts), 2), "%"), 
+    col = c("orange", "lightblue"),
+    main = "Proportion of inmates with violent felony charges")
 
-# charges %>%
-#   filter(m11 == TRUE) %>%
-#   group_by(`full name`, `v_code`) %>%
-#   ungroup() %>%
-#   select(`full name`, `Violation:`) %>%
-#   arrange(`full name`) %>%
-#   kable(caption='Inmates with Measure 11 charges')
+# Add number annotations
+legend("topright", legend = names(measure11_counts), 
+       title = "violent felony", 
+       fill = c("orange", "lightblue"))
 
 ```
+
+
 
 \newpage
 
@@ -354,83 +417,11 @@ charge_counts %>%
 
 
 ```
-\newpage
 
-## Top Non-Measure 11 charges
-
-These are the counts of charges for inmates that are not booked with Measure 11 charges.
-That means if someone is booked with a Measure 11 charge along with lesser charges, 
-those lesser charges will not be represented here. These are just the charges 
-for inmates who could potentially be released due to not being booked with a 
-Measure 11 charge.
-
-```{r violation non m11, echo=FALSE, warning=FALSE}
-
-# get charges for people who are not booked with measure 11 charges
-non_m11_charges <- charges[!charges$`Booking Number:` %in% m11_booking$`Booking Number:`,]
-
-# sort and display table of top violations
-non_m11_charges %>%
-  group_by(`Violation:`) %>%
-  summarize(count = n()) %>%
-  ungroup() %>%
-  select(`Violation:`, count) %>%
-  arrange(desc(`count`)) %>%
-  head(20) %>%
-  kable()
-
-
-```
-
-\newpage
-
-
-
-## Non-Measure 11 and Bail
-
-These inmates represent those being held that do not have Measure 11 charges
-and are being held with Cash or Bond requirements for bail.
-
-```{r inmates bail, echo = FALSE, warning=FALSE}
-# get charges for people who are not booked with measure 11 charges
-non_m11_charges <- charges[!charges$`Booking Number:` %in% m11_booking$`Booking Number:`,]
-
-# Parse bail and bond values and add total bail column
-bail_amounts <- non_m11_charges %>%
-  mutate(cash = as.integer(gsub("[\\$,]", "", `Req. Cash Amt:`)), 
-         bond = as.integer( gsub("[\\$,]", "", `Req. Bond Amt:`))) %>%
-  select(`full name`, cash, bond) %>%
-  group_by(`full name`) %>%
-  summarize(tot_cash = sum(cash), 
-            tot_bond = sum(bond),
-            total_bail = sum(cash) + sum(bond))
-
-bail_amounts$bail <- 'No Bail'
-bail_amounts$bail[bail_amounts$total_bail > 0] <- 'Bail'
-
-# Create formatted table of bail counts
-bail_amounts %>%
-  group_by(bail) %>%
-  summarize(count = n()) %>%
-  mutate(percentage = count / sum(count) * 100) %>%
-  mutate(percentage = paste0(round(percentage, 0), '%')) %>%
-  kable(caption="Non-Measure 11 Inmates Bail Requirements")
-
-# Count the number of inmates with each bail type
-bail_counts <- table(bail_amounts$bail)
-
-# Create a pie chart to show the proportion of inmates with different bail types
-pie(bail_counts, labels = names(bail_counts), col = c('red', "green"))
-title(main = "Proportion of Non-Measure 11 Inmates by Bail Type")
-
-```
 
 
 \newpage
 
-# Conclusion
-
-The jail is mostly holding inmates that do not have Measure 11 charges. There are currently 43 inmates that have unmet cash bail requirements that are not being held for Measure 11 felonies. Further, 297 inmates do not have Measure 11 charges. 
 
 # Appendix A
 
